@@ -7,11 +7,16 @@ Both routes run the identical pipeline and the identical renderer. The page
 inlines the SVG into the DOM so the browser can attach behaviour to the
 data-e / data-t attributes the renderer already emits; the image endpoint
 serves the same bytes with an image content type.
+
+Query params on both: ?style=forest|galaxy|circuit &theme=light|dark
+The image endpoint also takes &width= (presentation size only -- the viewBox
+is unchanged, so it never re-runs the simulation).
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -20,10 +25,12 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import cache
 import github
 import render
 from events import build_events, label_for
 from grow import grow
+from models import GitEvent, Scene
 
 BASE = Path(__file__).parent
 
@@ -41,10 +48,33 @@ def _json_for_script(value) -> str:
     return json.dumps(value).replace("<", "\\u003c").replace("\u2028", "\\u2028")
 
 
-async def _build(login: str):
-    """Fetch -> normalize -> grow. Returns (scene, resolved_login)."""
-    raw = await github.fetch_all(login)
-    return grow(build_events(raw), raw["login"]), raw["login"]
+@dataclass
+class Built:
+    scene: Scene
+    events: list[GitEvent]
+    login: str
+    stale: bool = False  # served from an expired cache because GitHub failed
+
+
+async def _build(login: str) -> Built:
+    """Cache -> GitHub -> cache. Falls back to stale data when GitHub is down."""
+    cached = cache.load(login)
+    if cached and cached.fresh:
+        return Built(grow(cached.events, cached.login), cached.events, cached.login)
+
+    try:
+        raw = await github.fetch_all(login)
+    except github.UserNotFound:
+        # Never paper over a 404 with stale art -- the account may be gone.
+        raise
+    except github.GitHubError:
+        if cached:  # rate limited or upstream 5xx: stale beats an error card
+            return Built(grow(cached.events, cached.login), cached.events, cached.login, True)
+        raise
+
+    events = build_events(raw)
+    cache.save(login, raw["login"], events)
+    return Built(grow(events, raw["login"]), events, raw["login"])
 
 
 @app.get("/", response_class=PlainTextResponse)
@@ -53,23 +83,32 @@ async def index() -> str:
 
 
 @app.get("/svg/{login}")
-async def svg(login: str, theme: str = "light", style: str = "forest") -> Response:
+async def svg(
+    login: str,
+    theme: str = "light",
+    style: str = "forest",
+    width: int | None = None,
+) -> Response:
     try:
-        scene, resolved = await _build(login)
+        built = await _build(login)
     except github.UserNotFound:
-        return _message_svg(f"no such user: {login}", theme, status=404)
+        return _message_svg(f"no such user: {login}", theme, status=404, width=width)
     except github.RateLimited:
-        return _message_svg("github rate limit reached, try later", theme, status=503)
+        return _message_svg("github rate limit reached, try later", theme, status=503, width=width)
     except github.GitHubError as exc:
-        return _message_svg(str(exc)[:80], theme, status=502)
+        return _message_svg(str(exc)[:80], theme, status=502, width=width)
 
-    if not scene.nodes:
-        return _message_svg(f"{resolved} has no public activity yet", theme, status=200)
+    if not built.scene.nodes:
+        return _message_svg(f"{built.login} has no public activity yet", theme, status=200, width=width)
 
+    body = render.render(
+        built.scene, style=style, theme=theme, login=built.login, width=width
+    )
     return Response(
-        content=render.render(scene, style=style, theme=theme, login=resolved),
+        content=body,
         media_type="image/svg+xml",
-        headers={"Cache-Control": "public, max-age=1800"},
+        # Short when serving stale, so a recovered upstream is picked up quickly.
+        headers={"Cache-Control": f"public, max-age={300 if built.stale else 1800}"},
     )
 
 
@@ -78,7 +117,7 @@ async def profile(
     request: Request, login: str, theme: str = "light", style: str = "forest"
 ) -> Response:
     try:
-        scene, resolved = await _build(login)
+        built = await _build(login)
     except github.UserNotFound:
         return _message_page(f"no such user: {login}", theme, status=404)
     except github.RateLimited:
@@ -86,8 +125,9 @@ async def profile(
     except github.GitHubError as exc:
         return _message_page(str(exc)[:120], theme, status=502)
 
+    scene = built.scene
     if not scene.nodes:
-        return _message_page(f"{resolved} has no public activity yet", theme, status=200)
+        return _message_page(f"{built.login} has no public activity yet", theme, status=200)
 
     # Only the events actually drawn need labels; sending all of them would
     # roughly quintuple the page for an active account.
@@ -100,12 +140,12 @@ async def profile(
         request=request,
         name="profile.html",
         context={
-            "login": resolved,
+            "login": built.login,
             "base": str(request.base_url).rstrip("/"),
             "theme": theme,
             "style": style,
             "styles": list(render.STYLES),
-            "stale": False,
+            "stale": built.stale,
             "svg": render.render(scene, style=style, theme=theme, login=""),
             "labels": _json_for_script(labels),
             "dates": _json_for_script(
@@ -121,13 +161,14 @@ async def profile(
     )
 
 
-def _message_svg(message: str, theme: str, *, status: int) -> Response:
+def _message_svg(message: str, theme: str, *, status: int, width: int | None = None) -> Response:
     """Every failure mode still renders a picture -- a README embed that breaks
     shows a broken-image icon, which tells the reader nothing."""
     palette = render.palette.theme_for(theme)
+    shown = 1200 if width is None else max(240, min(2400, width))
     body = (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 200" width="1200" '
-        f'height="200" font-family="{render.palette.FONT}">'
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 200" '
+        f'width="{shown}" height="{round(shown / 6)}" font-family="{render.palette.FONT}">'
         f'<rect width="1200" height="200" fill="{palette["bg"]}"/>'
         f'<text x="600" y="105" fill="{palette["text"]}" font-size="16" text-anchor="middle">'
         f"gitdna &#183; {escape(message)}</text></svg>"
