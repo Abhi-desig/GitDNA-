@@ -6,10 +6,12 @@ means adding a module here plus one line in STYLES -- nothing upstream changes.
 
 from __future__ import annotations
 
-from render import forest, palette
+from render import circuit, forest, galaxy, palette
 
 STYLES = {
     "forest": forest.render,
+    "galaxy": galaxy.render,
+    "circuit": circuit.render,
 }
 
 DEFAULT_STYLE = "forest"

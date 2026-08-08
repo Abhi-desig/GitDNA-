@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ login }} · GitDNA</title>
+<meta name="description" content="{{ login }}'s git history as a living organism.">
+<meta property="og:title" content="{{ login }} · GitDNA">
+<meta property="og:description" content="{{ shown }} repos grown from {{ node_count }} events.">
+<meta property="og:image" content="{{ base }}/svg/{{ login }}?style={{ style }}&theme={{ theme }}">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root { --fg:#2c2a26; --muted:#8c8778; --line:#e4e0d6; --panel:#fbfaf7; }
+  [data-theme="dark"] { --fg:#c9d1d9; --muted:#7d8590; --line:#21262d; --panel:#0d1117; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--panel); color:var(--fg);
+    font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  header, footer { max-width:1200px; margin:0 auto; padding:20px 16px; }
+  header { display:flex; flex-wrap:wrap; gap:14px; align-items:baseline; }
+  h1 { font-size:17px; margin:0; font-weight:600; }
+  nav { display:flex; gap:10px; margin-left:auto; flex-wrap:wrap; }
+  nav a { color:var(--muted); text-decoration:none; padding:3px 9px; border:1px solid var(--line); border-radius:99px; }
+  nav a[aria-current="true"] { color:var(--fg); border-color:var(--fg); }
+  #organism { max-width:1200px; margin:0 auto; padding:0 16px; position:relative; }
+  #organism svg { width:100%; height:auto; display:block; }
+  /* Branch strokes are ~2px, so widen the hit area without changing the look. */
+  #organism [data-e] { pointer-events:stroke; }
+  #organism circle[data-e], #organism rect[data-e] { pointer-events:all; }
+  #tip {
+    position:fixed; z-index:5; pointer-events:none;
+    background:var(--fg); color:var(--panel);
+    padding:5px 9px; border-radius:5px; font-size:12px; white-space:nowrap;
+  }
+  #tip[hidden] { display:none; }
+  .scrub { max-width:1200px; margin:0 auto; padding:14px 16px 0; display:flex; gap:14px; align-items:center; }
+  .scrub input { flex:1; accent-color:var(--fg); }
+  #readout { color:var(--muted); min-width:120px; text-align:right; font-variant-numeric:tabular-nums; }
+  .note { color:var(--muted); font-size:12px; }
+  .stale { color:#c9821f; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>{{ login }}</h1>
+  <span class="note">{{ shown }} of {{ total }} repos · {{ node_count }} elements{% if stale %} · <span class="stale">cached copy, GitHub unreachable</span>{% endif %}</span>
+  <nav>
+    {% for name in styles %}
+      <a href="?style={{ name }}&theme={{ theme }}" {% if name == style %}aria-current="true"{% endif %}>{{ name }}</a>
+    {% endfor %}
+    <a href="?style={{ style }}&theme={{ 'light' if theme == 'dark' else 'dark' }}">{{ 'light' if theme == 'dark' else 'dark' }}</a>
+  </nav>
+</header>
+
+<div class="scrub">
+  <label for="time" class="note">timeline</label>
+  <input id="time" type="range" min="0" max="1000" value="1000" step="1">
+  <span id="readout"></span>
+</div>
+
+<div id="organism">{{ svg | safe }}</div>
+
+<div id="tip" hidden></div>
+
+<footer class="note">
+  Hover any element to see the event that created it. Drag the timeline to watch the
+  ecosystem grow. Embed: <code>/svg/{{ login }}?style={{ style }}&amp;theme={{ theme }}</code>
+</footer>
+
+<script id="events" type="application/json">{{ labels | safe }}</script>
+<script id="range" type="application/json">{{ dates | safe }}</script>
+<script src="/static/app.js"></script>
+</body>
+</html>
