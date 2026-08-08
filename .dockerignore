@@ -1,0 +1,14 @@
+# SECURITY: .env holds a real GitHub token. `COPY . .` would otherwise bake it
+# into an image layer, where it survives even if a later layer deletes it.
+.env
+
+.venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+gitdna.db
+/*.json
+!.env.example
+README.md
+examples/
