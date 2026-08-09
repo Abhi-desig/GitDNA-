@@ -21,11 +21,17 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import cache
+import config
 import github
 import render
 from events import build_events, label_for
@@ -77,9 +83,17 @@ async def _build(login: str) -> Built:
     return Built(grow(events, raw["login"]), events, raw["login"])
 
 
-@app.get("/", response_class=PlainTextResponse)
-async def index() -> str:
-    return "GitDNA. Try /torvalds or /svg/torvalds\n"
+@app.get("/")
+async def index() -> Response:
+    """A shared link is usually the bare host, so send it somewhere worth seeing.
+
+    Temporary, not permanent: GITDNA_DEFAULT_USER is a deploy setting, and a
+    301 would stick in visitors' browsers long after it changed.
+    """
+    login = config.default_user()
+    if login:
+        return RedirectResponse(f"/{login}", status_code=307)
+    return PlainTextResponse("GitDNA. Try /torvalds or /svg/torvalds\n")
 
 
 @app.get("/svg/{login}")

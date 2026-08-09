@@ -31,3 +31,9 @@ def load_env() -> None:
 def github_token() -> str | None:
     load_env()
     return os.environ.get("GITHUB_TOKEN") or None
+
+
+def default_user() -> str | None:
+    """Login that `/` redirects to, so a bare host link lands on a garden."""
+    load_env()
+    return os.environ.get("GITDNA_DEFAULT_USER") or None

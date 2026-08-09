@@ -23,6 +23,10 @@ one, the GraphQL contribution calendar is unavailable and there are no commits.
 - `http://localhost:8000/torvalds` — interactive page
 - `http://localhost:8000/svg/torvalds` — embeddable image
 
+`/` itself draws nothing: there is no username in it. Set `GITDNA_DEFAULT_USER`
+to make it redirect to one garden, which is what you want if you plan to share
+the bare host URL.
+
 ## Architecture
 
 ```
@@ -110,3 +114,9 @@ docker build -t gitdna . && docker run -p 8000:8000 --env-file .env gitdna
 Mount a volume and set `GITDNA_DB=/data/gitdna.db` to keep the cache across
 restarts. Any host that runs a container works; skip Vercel, whose Python
 runtime is fiddly and buys nothing here.
+
+| Variable | Effect |
+|---|---|
+| `GITHUB_TOKEN` | Required for commits. Without it there is no contribution calendar |
+| `GITDNA_DEFAULT_USER` | Optional. Redirects `/` to that login instead of the placeholder line |
+| `GITDNA_DB` | Optional. Cache location; point it at a mounted volume to survive restarts |
